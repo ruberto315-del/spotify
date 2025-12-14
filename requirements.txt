@@ -1,0 +1,17 @@
+aiogram==3.1.1
+# Указано безопасное обновление aiohttp и spotipy
+# Если необходима максимальная свежесть, можно убрать фиксацию подверсии
+# aiohttp обновлен до последней стабильной, совместимой с aiogram и Linux
+# spotipy — минимум 2.23.0 (с учетом совместимости)
+aiohttp~=3.8.5
+spotipy>=2.23.0
+yt-dlp==2023.11.16
+python-dotenv==1.0.0
+asyncio-throttle==1.0.2
+ytmusicapi==1.4.1
+rapidfuzz==3.6.1
+beautifulsoup4==4.12.3
+# Для Railway добавьте в Dockerfile:
+# RUN pip install --upgrade pip && pip install --upgrade -r requirements.txt
+#aiogram
+#asyncpg
