@@ -3196,7 +3196,7 @@ async def process_playlist(message: Message, playlist_id: str, processing_msg: t
         
         tracks = playlist_info['tracks']
         
-        if len(tracks) > 15:
+        if len(tracks) > 50:
             await processing_msg.edit_text(
                 f"⚠️ Плейлист '{playlist_info['name']}' містить {len(tracks)} треків.\n"
                 f"Для великих плейлистів рекомендується обробляти треки окремо.\n"
@@ -3390,3 +3390,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
