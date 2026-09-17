@@ -3102,70 +3102,70 @@ async def process_track(message: Message, track_id: str, processing_msg: types.M
             
             # Конвертируем в MP3 только если файл НЕ в MP3 формате
             if file_extension != '.mp3':
-                try:
-                    # Проверяем размер файла - если слишком маленький, пропускаем конвертацию
-                    if file_size < 10000:  # Меньше 10KB - вероятно поврежденный файл
-                        logger.warning(f"File too small ({file_size} bytes), skipping conversion")
-                        await processing_msg.edit_text("❌ Файл слишком маленький или поврежден.")
-                        os.remove(file_path)
-                        return
-                    else:
-                        import subprocess
-                        import tempfile
-                    
-                        # Создаем временный файл для конвертации
-                        mp3_path = file_path.replace(file_extension, '.mp3')
-                        
-                        # Используем FFmpeg напрямую для конвертации с дополнительными параметрами
-                        ffmpeg_cmd = [
-                            'ffmpeg',
-                            '-f', 'aac',  # Указываем формат явно
-                            '-i', file_path,
-                            '-acodec', 'mp3',
-                            '-ab', '192k',
-                            '-ar', '44100',
-                            '-ac', '2',
-                            '-avoid_negative_ts', 'make_zero',
-                            '-fflags', '+genpts',
-                            '-y',  # Перезаписываем файл если существует
-                            mp3_path
-                        ]
-                        
-                        result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=60)
-                        
-                        if result.returncode == 0 and os.path.exists(mp3_path):
-                            # Проверяем размер нового файла
-                            new_size = os.path.getsize(mp3_path)
-                            if new_size > 1000:  # Новый файл должен быть больше 1KB
-                                # Удаляем оригинальный файл
-                                os.remove(file_path)
-                                file_path = mp3_path
-                                file_size = new_size
-                                logger.info(f"Successfully converted to MP3: {file_path} ({file_size} bytes)")
-                            else:
-                                logger.error(f"Converted file too small: {new_size} bytes")
-                                os.remove(mp3_path)
-                                raise Exception("Converted file too small")
-                        else:
-                            logger.error(f"FFmpeg conversion failed: {result.stderr}")
-                            # Если FFmpeg не смог конвертировать, пробуем отправить оригинальный файл
-                            raise Exception(f"FFmpeg failed: {result.stderr}")
-                            
-                except Exception as conversion_error:
-                    logger.error(f"Conversion error: {conversion_error}")
-                    # Якщо конвертація не вдалася, видаляємо файл та повідомляємо про помилку
-                    await processing_msg.edit_text("❌ Не вдалося конвертувати файл у MP3.")
+                # Проверяем размер файла - если слишком маленький, пропускаем конвертацию
+                if file_size < 10000:  # Меньше 10KB - вероятно поврежденный файл
+                    logger.warning(f"File too small ({file_size} bytes), skipping conversion")
+                    await processing_msg.edit_text("❌ Файл слишком маленький или поврежден.")
                     os.remove(file_path)
                     return
+
+                # Пробуем конвертировать в MP3
+                try:
+                    import subprocess
+
+                    mp3_path = file_path.replace(file_extension, '.mp3')
+
+                    # НЕ задаем -f: .aac бывает как raw ADTS, так и MP4/M4A-контейнером
+                    # с тем же именем. Принудительный '-f aac' ломает и то, и другое.
+                    ffmpeg_cmd = [
+                        'ffmpeg',
+                        '-i', file_path,
+                        '-acodec', 'mp3',
+                        '-ab', '192k',
+                        '-ar', '44100',
+                        '-ac', '2',
+                        '-avoid_negative_ts', 'make_zero',
+                        '-fflags', '+genpts',
+                        '-y',  # Перезаписываем файл если существует
+                        mp3_path
+                    ]
+
+                    result = subprocess.run(ffmpeg_cmd, capture_output=True, text=True, timeout=60)
+
+                    if result.returncode == 0 and os.path.exists(mp3_path):
+                        # Проверяем размер нового файла
+                        new_size = os.path.getsize(mp3_path)
+                        if new_size > 1000:  # Новый файл должен быть больше 1KB
+                            # Удаляем оригинальный файл
+                            os.remove(file_path)
+                            file_path = mp3_path
+                            file_size = new_size
+                            logger.info(f"Successfully converted to MP3: {file_path} ({file_size} bytes)")
+                        else:
+                            logger.error(f"Converted file too small: {new_size} bytes")
+                            os.remove(mp3_path)
+                            logger.warning("Conversion result too small, sending original file")
+                    else:
+                        logger.error(f"FFmpeg conversion failed: {result.stderr}")
+                        logger.warning("Conversion failed, sending original file")
+                except Exception as conversion_error:
+                    logger.error(f"Conversion error: {conversion_error}")
+                    logger.warning("Conversion exception, sending original file")
             
-            # Отправляем файл (теперь он всегда в MP3 формате)
+            # Отправляем файл (в MP3 после успешной конвертации, иначе оригинал)
             try:
                 # Создаем красивое название файла только с названием трека
                 clean_track_name = clean_filename(track_info['name'])
-                
-                # Отправляем файл с кастомным именем (всегда .mp3)
+
+                # Имя файла — по фактическому расширению (mp3 или исходный формат)
+                out_ext = os.path.splitext(file_path)[1].lower()
+                if not out_ext:
+                    out_ext = '.mp3'
+                out_filename = f"{clean_track_name}{out_ext}"
+
+                # Отправляем файл с кастомным именем
                 await message.answer_document(
-                    document=types.FSInputFile(file_path, filename=f"{clean_track_name}.mp3"),
+                    document=types.FSInputFile(file_path, filename=out_filename),
                     caption=f"🎵 {track_info['name']} - {track_info['artist']}\n"
                            f"⏱️ {track_info['duration_formatted']} | 📁 {format_file_size(file_size)}"
                 )
