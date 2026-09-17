@@ -8,7 +8,7 @@ pip install -r requirements.txt
 ## Шаг 2: Настройка токена
 Создайте файл `.env` в корне проекта:
 ```
-TELEGRAM_TOKEN=8313026423:AAHJVn0rWa1T-2wb4FBBQEqHdgKhe8mtiY4
+TELEGRAM_TOKEN=your_bot_token_from_botfather
 ```
 
 ## Шаг 3: Запуск бота

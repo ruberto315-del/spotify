@@ -31,9 +31,10 @@ git push -u origin main
 3. Выберите ваш репозиторий
 4. В Variables добавьте:
    ```
-   TELEGRAM_TOKEN=8313026423:AAHJVn0rWa1T-2wb4FBBQEqHdgKhe8mtiY4
-   SPOTIFY_CLIENT_ID=8cf672fedd5b4fcd90430f12cd80f2d1
-   SPOTIFY_CLIENT_SECRET=28ac385824814fcf942961dfc75f727e
+   TELEGRAM_TOKEN=your_bot_token_from_botfather
+   WEBHOOK_SECRET=generate_with_python_secrets_token_urlsafe_32
+   SPOTIFY_CLIENT_ID=your_spotify_client_id
+   SPOTIFY_CLIENT_SECRET=your_spotify_client_secret
    ```
 
 ### 3. Мониторинг

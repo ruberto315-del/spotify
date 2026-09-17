@@ -23,7 +23,7 @@
 
 6. Обновите файл `.env`:
 ```
-TELEGRAM_TOKEN=8313026423:AAHJVn0rWa1T-2wb4FBBQEqHdgKhe8mtiY4
+TELEGRAM_TOKEN=your_bot_token_from_botfather
 SPOTIFY_CLIENT_ID=your_client_id_here
 SPOTIFY_CLIENT_SECRET=your_client_secret_here
 ```

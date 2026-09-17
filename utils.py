@@ -1267,7 +1267,7 @@ class AlternativeYouTubeProvider:
                 'sleep_interval': 0.5,
                 'geo_bypass': True,
                 'geo_bypass_country': 'RU',  # Другая страна
-                'no_check_certificate': True,
+                'no_check_certificate': False,
                 'ignoreerrors': True,
             }
             
@@ -2066,7 +2066,7 @@ class EnhancedSoundCloudProvider:
                     ]
                 },
                 'ignoreerrors': True,
-                'no_check_certificate': True,
+                'no_check_certificate': False,
                 'prefer_ffmpeg': True,
                 'keepvideo': False,
             }

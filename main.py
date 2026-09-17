@@ -2,12 +2,13 @@ import asyncio
 import logging
 import os
 import re
+import secrets
 import time
 from typing import List, Optional, Tuple
 import aiohttp
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Update, Message, InlineKeyboardMarkup, InlineKeyboardButton
 from dotenv import load_dotenv
 import yt_dlp
 import shutil
@@ -15,15 +16,6 @@ from aiohttp import web
 from datetime import datetime
 
 from utils import EnhancedSpotifyParser, MusicSearchEngine, clean_filename, format_file_size, JioSaavnProvider, SoundCloudProvider, YTMusicProvider, AlternativeMusicProvider, BandcampProvider, ArchiveOrgProvider, FreeMusicArchiveProvider, JamendoProvider, MixcloudProvider, AlternativeYouTubeProvider, VKMusicProvider, YandexMusicProvider, DeezerProvider, AudiomackProvider, MusopenProvider, PleerNetProvider, MP3JuicesProvider, ZaycevProvider, MyzukaProvider, RuTrackProvider, RedMp3Provider, Mp3SkullsProvider, Music7sProvider, Mp3DownloadProvider, Beemp3sProvider, VkMusicFunProvider, ImprovedSearchEngine, EnhancedSoundCloudProvider
-
-db_config = {
-    'user': 'postgres',
-    'password': 'MppPCJrvBTeobJDWcFYnBVHISFBEcfxN',
-    'database': 'railway',
-    'host': 'postgres.railway.internal',
-    'port': '5432',
-}
-
 
 # Загружаем переменные окружения
 load_dotenv()
@@ -45,6 +37,14 @@ def is_ffmpeg_available() -> bool:
 # Ініціалізація бота
 bot = Bot(token=os.getenv('TELEGRAM_TOKEN'))
 dp = Dispatcher()
+
+# Секрет для webhook — ТІЛЬКИ з Railway Variables / .env.
+# Якщо не заданий і включений webhook-режим — бот не запуститься (fail-fast).
+WEBHOOK_SECRET = os.getenv('WEBHOOK_SECRET', '')
+WEBHOOK_PATH = "/webhook"
+
+# Ліміт розміру вхідного тіла webhook (Telegram Update маленький, 64KB більш ніж достатньо)
+MAX_WEBHOOK_BODY_SIZE = 64 * 1024
 
 # Семафор для обмеження одночасних завантажень (максимум 3 одночасно)
 download_semaphore = asyncio.Semaphore(3)
@@ -198,7 +198,7 @@ class MusicDownloader:
                                 ]
                             },
                             'ignoreerrors': True,  # Игнорируем ошибки постобработки
-                            'no_check_certificate': True,  # Отключаем проверку сертификатов
+                            'no_check_certificate': False,  # Проверяем TLS-сертификаты (защита от MITM)
                         }
                         import yt_dlp as _yt
                         with _yt.YoutubeDL(ydl_sc_opts) as ydl2:
@@ -524,7 +524,7 @@ class MusicDownloader:
                     ]
                 },
                 'ignoreerrors': True,  # Игнорируем ошибки постобработки
-                'no_check_certificate': True,  # Отключаем проверку сертификатов
+                'no_check_certificate': False,  # Проверяем TLS-сертификаты (защита от MITM)
                 'prefer_ffmpeg': True,
                 'noprogress': True,
                 'noplaylist': True,
@@ -563,7 +563,7 @@ class MusicDownloader:
                 'geo_bypass': True,
                 'geo_bypass_country': 'US',
                 'cookiesfrombrowser': None,  # Отключаем cookies
-                'no_check_certificate': True,
+                'no_check_certificate': False,
                 'ignoreerrors': True,
                 # Отключаем аутентификацию
                 'username': None,
@@ -660,7 +660,7 @@ class MusicDownloader:
                                 '-max_muxing_queue_size', '1024'
                             ]
                         },
-                        'no_check_certificate': True,
+                        'no_check_certificate': False,
                     }
                     
                     with yt_dlp.YoutubeDL(simple_ydl_opts) as ydl:
@@ -699,7 +699,7 @@ class MusicDownloader:
                             'quiet': True,
                             'no_warnings': True,
                             'ignoreerrors': True,
-                            'no_check_certificate': True,
+                            'no_check_certificate': False,
                         }
                         
                         with yt_dlp.YoutubeDL(ultra_simple_opts) as ydl:
@@ -3009,6 +3009,12 @@ async def process_spotify_link(message: Message):
     processing_msg = await message.answer("🔄 Обробляю посилання...")
     
     try:
+        # Отбрасываем не-HTTP(S) схемы (file://, javascript: и т.п.)
+        if "://" in text and not is_safe_http_url(text):
+            logger.warning(f"Rejected unsafe URL scheme from user {uid}")
+            await processing_msg.edit_text("❌ Небезпечне посилання. Дозволені тільки http/https URL.")
+            return
+
         # Витягуємо ID з посилання (тепер асинхронно)
         ids = await spotify_parser.extract_ids_from_url(text)
         
@@ -3171,7 +3177,7 @@ async def process_track(message: Message, track_id: str, processing_msg: types.M
                 await processing_msg.delete()
             except Exception as send_error:
                 logger.error(f"Error sending file: {send_error}")
-                await processing_msg.edit_text(f"❌ Помилка відправки файлу: {send_error}")
+                await processing_msg.edit_text("❌ Не вдалося відправити файл. Спробуйте ще раз.")
         else:
             logger.error(f"File not found or invalid path: {file_path}")
             await processing_msg.edit_text("❌ Не вдалося знайти або завантажити трек.")
@@ -3343,6 +3349,80 @@ async def health_check(request):
     """Health check endpoint для Railway"""
     return web.Response(text="Spotify Music Bot is running", status=200)
 
+
+def get_webhook_base_url() -> Optional[str]:
+    """Публичный HTTPS-адрес приложения для webhook (Railway -> RAILWAY_PUBLIC_DOMAIN)."""
+    for key in ("WEBHOOK_BASE_URL", "RAILWAY_PUBLIC_DOMAIN"):
+        val = os.getenv(key)
+        if val:
+            if not val.startswith("http://") and not val.startswith("https://"):
+                val = f"https://{val}"
+            return val.rstrip("/")
+    return None
+
+
+def is_safe_http_url(text: str) -> bool:
+    """Разрешаем пользователю только http(s) ссылки, блокируем file:// и прочие схемы."""
+    lowered = text.strip().lower()
+    return lowered.startswith(("http://", "https://"))
+
+
+async def telegram_webhook(request):
+    """Принимает update от Telegram. Без верного Secret Token -> 403."""
+    provided = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+    if not WEBHOOK_SECRET or not secrets.compare_digest(provided, WEBHOOK_SECRET):
+        logger.warning("Webhook rejected: invalid or missing secret token")
+        return web.Response(status=403)
+    try:
+        data = await request.json()
+        update = Update.model_validate(data)
+    except Exception:
+        logger.exception("Invalid webhook payload")
+        return web.Response(status=400)
+    # Долгие обработчики не блокируют ответ Telegram
+    asyncio.create_task(dp.feed_update(bot, update))
+    return web.Response(text="OK")
+
+
+async def start_webhook(app: web.Application) -> None:
+    """Режим webhook: set_webhook + постоянный HTTP-сервер. Polling не запускается."""
+    base_url = get_webhook_base_url()
+    if not base_url:
+        raise RuntimeError("Webhook mode requires WEBHOOK_BASE_URL or RAILWAY_PUBLIC_DOMAIN")
+    if not WEBHOOK_SECRET:
+        raise RuntimeError(
+            "WEBHOOK_SECRET not set! Add it to Railway Variables "
+            "(secrets.token_urlsafe(32)) - bot will not start without it"
+        )
+
+    app.router.add_post(WEBHOOK_PATH, telegram_webhook)
+
+    await bot.set_webhook(
+        url=f"{base_url}{WEBHOOK_PATH}",
+        secret_token=WEBHOOK_SECRET,
+        allowed_updates=["message", "callback_query"],
+        drop_pending_updates=True,
+    )
+    logger.info(f"Webhook set: {base_url}{WEBHOOK_PATH}")
+
+    # Сервер уже запущен в main(); держим процесс живым
+    await asyncio.Event().wait()
+
+
+async def start_polling_with_retry() -> None:
+    """Локальный/fallback режим: только polling, webhook при этом не используется."""
+    try:
+        await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
+    except Exception as e:
+        logger.error(f"Bot startup error: {e}")
+        if "Conflict" in str(e) or "terminated by other getUpdates" in str(e):
+            logger.info("Detected Telegram conflict, waiting 10 seconds before retry...")
+            await asyncio.sleep(10)
+            await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
+        else:
+            raise
+
+
 async def main():
     """Основная функция"""
     # Проверяем переменные окружения
@@ -3357,12 +3437,12 @@ async def main():
     logger.info(f"FFmpeg available: {is_ffmpeg_available()}")
     logger.info(f"Spotify API configured: {bool(spotify_client_id and spotify_client_secret)}")
     
-    # Создаем HTTP сервер для health check
-    app = web.Application()
+    # Один HTTP-сервер: health check + webhook. Лимит на размер входящего тела.
+    app = web.Application(client_max_size=MAX_WEBHOOK_BODY_SIZE)
     app.router.add_get('/', health_check)
     app.router.add_get('/health', health_check)
     
-    # Запускаем HTTP сервер в фоне
+    # Запускаем HTTP сервер
     runner = web.AppRunner(app)
     await runner.setup()
     port = int(os.getenv('PORT', 8080))
@@ -3370,22 +3450,11 @@ async def main():
     await site.start()
     logger.info(f"HTTP server started on port {port}")
     
-    try:
-        # Запускаем Telegram бота с обработкой конфликтов
-        await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
-    except Exception as e:
-        logger.error(f"Bot startup error: {e}")
-        # Если ошибка связана с конфликтом, ждем и перезапускаем
-        if "Conflict" in str(e) or "terminated by other getUpdates" in str(e):
-            logger.info("Detected Telegram conflict, waiting 10 seconds before retry...")
-            await asyncio.sleep(10)
-            try:
-                await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
-            except Exception as retry_error:
-                logger.error(f"Retry failed: {retry_error}")
-                raise
-        else:
-            raise
+    # Webhook ИЛИ polling — никогда одновременно.
+    if get_webhook_base_url():
+        await start_webhook(app)
+    else:
+        await start_polling_with_retry()
 
 
 if __name__ == "__main__":
