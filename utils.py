@@ -2079,11 +2079,11 @@ class EnhancedSoundCloudProvider:
                     logger.info(f"Enhanced SoundCloud: Downloaded '{title}', looking for file...")
                     for ext in ['mp3', 'webm', 'm4a', 'ogg', 'wav']:
                         file_path = f"downloads/{title}.{ext}"
-                        if os.path.exists(file_path):
+                        if os.path.exists(file_path) and os.path.getsize(file_path) > 1000:
                             logger.info(f"Enhanced SoundCloud: Found file {file_path}")
                             return file_path
                     aac_path = f"downloads/{title}.aac"
-                    if os.path.exists(aac_path):
+                    if os.path.exists(aac_path) and os.path.getsize(aac_path) > 1000:
                         logger.info(f"Enhanced SoundCloud: Found AAC file {aac_path}, will convert to MP3")
                         return aac_path
 

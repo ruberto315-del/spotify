@@ -3,6 +3,7 @@ import logging
 import os
 import re
 import secrets
+import subprocess
 import time
 from typing import List, Optional, Tuple
 import aiohttp
@@ -33,6 +34,19 @@ logger = logging.getLogger(__name__)
 # Перевірка наявності ffmpeg
 def is_ffmpeg_available() -> bool:
     return shutil.which("ffmpeg") is not None
+
+
+def is_valid_audio(file_path: str) -> bool:
+    """Проверяет, что файл реально открывается как мультимедиа (ffprobe)."""
+    try:
+        probe = subprocess.run(
+            ['ffprobe', '-v', 'error', '-show_entries', 'format=format_name',
+             '-of', 'default=noprint_wrappers=1:nokey=1', file_path],
+            capture_output=True, text=True, timeout=30
+        )
+        return probe.returncode == 0 and bool(probe.stdout.strip())
+    except Exception:
+        return False
 
 # Ініціалізація (bot створюється в main() після перевірки токену)
 bot = None
@@ -3090,6 +3104,21 @@ async def process_track(message: Message, track_id: str, processing_msg: types.M
             file_size = os.path.getsize(file_path)
             logger.info(f"Sending file: {file_path} (size: {file_size} bytes)")
             
+            # Файл мог оказаться битым (пустой/мусорный .aac от провайдера).
+            # Проверяем через ffprobe и один раз пробуем скачать заново.
+            if not is_valid_audio(file_path):
+                logger.warning(f"Invalid audio file from downloader: {file_path}")
+                os.remove(file_path)
+                async with download_semaphore:
+                    file_path = await MusicDownloader.search_and_download(search_query, track_info)
+                if not file_path or not os.path.exists(file_path) or not is_valid_audio(file_path):
+                    logger.error(f"Download retry failed or returned invalid file: {file_path}")
+                    await processing_msg.edit_text("❌ Не вдалося завантажити трек у коректному форматі.")
+                    if file_path and os.path.exists(file_path):
+                        os.remove(file_path)
+                    return
+                file_size = os.path.getsize(file_path)
+
             # Проверяем формат файла и конвертируем если нужно
             file_extension = os.path.splitext(file_path)[1].lower()
             logger.info(f"File extension: {file_extension}")
