@@ -1,0 +1,26 @@
+# Environment files (секреты)
+.env
+.env.local
+.env.production
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.env/
+
+# Logs
+*.log
+logs/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.idea/.vscode/
+*.swp
+
+# Cache
+.cache
+*.egg-info/
