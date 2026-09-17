@@ -34,8 +34,8 @@ logger = logging.getLogger(__name__)
 def is_ffmpeg_available() -> bool:
     return shutil.which("ffmpeg") is not None
 
-# Ініціалізація бота
-bot = Bot(token=os.getenv('TELEGRAM_TOKEN'))
+# Ініціалізація (bot створюється в main() після перевірки токену)
+bot = None
 dp = Dispatcher()
 
 # Секрет для webhook — ТІЛЬКИ з Railway Variables / .env.
@@ -3425,10 +3425,13 @@ async def start_polling_with_retry() -> None:
 
 async def main():
     """Основная функция"""
+    global bot
     # Проверяем переменные окружения
     if not os.getenv('TELEGRAM_TOKEN'):
         logger.error("TELEGRAM_TOKEN not found in environment variables")
         return
+    
+    bot = Bot(token=os.environ['TELEGRAM_TOKEN'])
     
     # Создаем папку для загрузок
     os.makedirs("downloads", exist_ok=True)
